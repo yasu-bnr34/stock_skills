@@ -1,9 +1,12 @@
 """Common utilities for skill scripts -- graceful imports and context."""
 
 import signal
-from typing import Optional
+from typing import Callable, Optional, TypeVar
 
 _CONTEXT_TIMEOUT = 10  # seconds — max wait for context/suggestions
+_HAS_SIGALRM = hasattr(signal, "SIGALRM")  # False on Windows
+
+_T = TypeVar("_T")
 
 
 def try_import(module_path: str, *names: str):
@@ -72,6 +75,43 @@ def _timeout_handler(signum, frame):
     raise TimeoutError("Context/suggestion timeout")
 
 
+def _run_with_timeout(func: Callable[[], _T], timeout: int = _CONTEXT_TIMEOUT) -> _T:
+    """Run ``func()`` with a wall-clock timeout, cross-platform.
+
+    On Unix uses ``signal.SIGALRM`` (interrupts the call). On platforms without
+    SIGALRM (e.g. Windows) falls back to a daemon worker thread joined with a
+    timeout — the call cannot be interrupted, but the caller never hangs.
+    Raises ``TimeoutError`` on timeout; exceptions from ``func`` propagate.
+    """
+    if _HAS_SIGALRM:
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(timeout)
+        try:
+            return func()
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+
+    import threading
+
+    box: dict = {}
+
+    def _worker() -> None:
+        try:
+            box["value"] = func()
+        except Exception as exc:  # noqa: BLE001 — propagated to caller below
+            box["error"] = exc
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        raise TimeoutError("Context/suggestion timeout")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
 def print_context(user_input: str) -> Optional[str]:
     """Get and print graph context at script start.
 
@@ -83,13 +123,7 @@ def print_context(user_input: str) -> Optional[str]:
     try:
         from src.data.context.auto_context import get_context
 
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(_CONTEXT_TIMEOUT)
-        try:
-            result = get_context(user_input)
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+        result = _run_with_timeout(lambda: get_context(user_input))
 
         if result and result.get("context_markdown"):
             print(result["context_markdown"])
@@ -112,22 +146,20 @@ def print_removal_contexts(symbols: list[str]) -> None:
     try:
         from src.data.context.auto_context import get_context
 
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(_CONTEXT_TIMEOUT)
-        try:
-            contexts = []
+        def _collect() -> list[str]:
+            collected = []
             for sym in symbols:
                 result = get_context(sym)
                 if result and result.get("context_markdown"):
-                    contexts.append(result["context_markdown"])
-            if contexts:
-                print("---")
-                print("## 売却候補のコンテキスト (KIK-470)\n")
-                print("\n\n".join(contexts))
-                print()
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+                    collected.append(result["context_markdown"])
+            return collected
+
+        contexts = _run_with_timeout(_collect)
+        if contexts:
+            print("---")
+            print("## 売却候補のコンテキスト (KIK-470)\n")
+            print("\n\n".join(contexts))
+            print()
     except Exception:
         pass  # graceful degradation
 
@@ -150,17 +182,13 @@ def print_suggestions(
     try:
         from src.core.proactive_engine import format_suggestions, get_suggestions
 
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(_CONTEXT_TIMEOUT)
-        try:
-            suggestions = get_suggestions(
+        suggestions = _run_with_timeout(
+            lambda: get_suggestions(
                 context=context_summary,
                 symbol=symbol,
                 sector=sector,
             )
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+        )
 
         output = format_suggestions(suggestions)
         if output:
