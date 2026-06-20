@@ -99,6 +99,13 @@ presets:
       min_52wk_change: 0.20
       min_market_cap: 50000000000
 
+  surge:
+    description: "急騰株（当日+3%以上・出来高2倍以上の短期急騰を検出）"
+    mode: "surge"
+    criteria:
+      min_market_cap: 10000000000
+      min_avg_volume_3m: 100000
+
   long-term:
     description: "長期投資適性（高ROE・EPS成長・高配当・安定企業）"
     criteria:

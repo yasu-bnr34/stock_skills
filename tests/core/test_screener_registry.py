@@ -374,7 +374,7 @@ class TestRunScreenerWithSpec:
 # ---------------------------------------------------------------------------
 
 class TestBuildDefaultRegistry:
-    def test_all_15_presets_registered(self):
+    def test_all_presets_registered(self):
         registry = build_default_registry()
         presets = registry.list_presets()
         expected = sorted([
@@ -382,6 +382,7 @@ class TestBuildDefaultRegistry:
             "deep-value", "quality", "pullback", "alpha",
             "trending", "long-term", "shareholder-return",
             "high-growth", "small-cap-growth", "contrarian", "momentum",
+            "surge",
         ])
         assert presets == expected
 

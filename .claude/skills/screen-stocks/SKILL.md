@@ -118,6 +118,7 @@ python3 .../run_screen.py --preset value --auto-theme
 - `small-cap-growth` : 小型急成長株（時価総額1000億以下・売上成長率≧20%・PSR≦15・粗利率≧20%。機関投資家未発見の10倍株候補。地域別時価総額自動調整付き。リスク★★★★）（KIK-437）
 - `contrarian` : 逆張り候補（テクニカル売られすぎ × バリュエーション割安 × ファンダ堅調。3軸100点スコアリング。バリュートラップの対極で「市場の過剰反応」を検出）（KIK-504）
 - `momentum` : モメンタム急騰銘柄（RSI/MACD/出来高急増/トレンド整合の4軸スコアリング。上昇トレンドにある銘柄を検出。`--submode` で安定加速か急騰かを選択可能）（KIK-506）
+- `surge` : 急騰株（当日+3%以上 ＋ 出来高2倍以上の短期急騰を検出。当日急騰/短期急騰/ブレイクアウトの3種別。ザラ場・引け後に素早く急騰銘柄を発見）
 
 ### Momentum スクリーニング詳細（KIK-506）
 
@@ -176,6 +177,9 @@ python3 .../run_screen.py --preset value --auto-theme
 
 ### Momentum モードの出力列
 順位 / 銘柄 / 株価 / PER / RSI / MACD / モメンタム率 / 出来高比 / モメンタムスコア / 総合スコア / 分類
+
+### Surge モードの出力列
+順位 / 銘柄 / 株価 / 当日騰落 / 5日騰落 / 出来高倍 / MACD / スコア / 種別
 
 ### Shareholder Return モードの出力列
 順位 / 銘柄 / 株価 / 配当利回り / 自社株買い利回り / 総還元率 / 安定度 / ROE / PER
@@ -281,6 +285,12 @@ python3 .../run_screen.py --region japan --preset contrarian --sector Technology
 
 # 日本の急騰・モメンタム銘柄（安定加速のみ、デフォルト）
 python3 .claude/skills/screen-stocks/scripts/run_screen.py --preset momentum --region japan --top 10
+
+# 日本の当日急騰株（当日+3%以上・出来高2倍以上）
+python3 .claude/skills/screen-stocks/scripts/run_screen.py --preset surge --region japan --top 20
+
+# 米国の急騰株
+python3 .claude/skills/screen-stocks/scripts/run_screen.py --preset surge --region us --top 20
 
 # 米国の急騰銘柄を含むモメンタムスクリーニング（急騰・過熱も含む）
 python3 .claude/skills/screen-stocks/scripts/run_screen.py --preset momentum --region us --top 5 --submode surge

@@ -259,7 +259,7 @@ def build_default_registry() -> ScreenerRegistry:
         format_query_markdown, format_pullback_markdown,
         format_alpha_markdown, format_growth_markdown,
         format_contrarian_markdown, format_momentum_markdown,
-        format_trending_markdown,
+        format_trending_markdown, format_surge_markdown,
     )
 
     # Try to import optional shareholder-return formatter
@@ -421,6 +421,21 @@ def build_default_registry() -> ScreenerRegistry:
         step_messages=(
             "Step 1: モメンタム条件で絞り込み中...",
             "Step 2-3 完了: {n}銘柄がモメンタム条件に合致",
+        ),
+    ))
+
+    # --- Surge (short-term: intraday +3%+ and volume spike) ---
+    registry.register(ScreenerSpec(
+        preset="surge",
+        screener_class=MomentumScreener,
+        formatter=format_surge_markdown,
+        display_name="急騰株",
+        supports_legacy=False,
+        category="momentum",
+        screen_kwargs_fn=lambda args, r, rc: {"submode": "intraday"},
+        step_messages=(
+            "Step 1: 市場規模・出来高条件で絞り込み中...",
+            "Step 2-3 完了: {n}銘柄が急騰条件に合致",
         ),
     ))
 

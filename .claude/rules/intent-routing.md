@@ -51,6 +51,9 @@
 「急騰銘柄」              → /screen-stocks japan momentum
 「ブレイクアウト検出」    → /screen-stocks japan momentum
 「モメンタム銘柄」        → /screen-stocks japan momentum
+「当日急騰している銘柄」  → /screen-stocks japan surge
+「今日急騰している株」    → /screen-stocks japan surge
+「ザラ場で急騰してる銘柄」→ /screen-stocks japan surge
 ```
 
 **KIK-452 GraphRAG コンテキスト**: スクリーニング結果の末尾に、Neo4j ナレッジグラフから取得したセクタートレンド・投資メモ・テーマ情報が構造化データとして自動表示される（Neo4j 接続時のみ）。Claude Code LLM がこの構造化データを解釈して統合サマリーを生成する（KIK-532: Grok API 呼び出しを廃止）。Neo4j 未接続の場合はこのセクションは非表示となり、スクリーニング本体の動作には影響しない。
@@ -77,6 +80,7 @@
 | 小型成長株、マイクロキャップ、10倍株、小型グロース、テンバガー候補、小型急成長 | small-cap-growth |
 | 逆張り、売られすぎ、過剰反応、底打ち、リバウンド狙い、反発狙い | contrarian |
 | 急騰、ブレイクアウト、モメンタム、勢い、上昇トレンド強気 | momentum |
+| 当日急騰、今日急騰、今日の急騰、ザラ場急騰、引け急騰、今すぐ急騰 | surge |
 | 市場の期待株、PER高くても成長してる株、成長プレミアム、ハイPER成長 | market-darling |
 | 指定なし | alpha |
 
@@ -276,6 +280,10 @@
 「日記」「投資日記」「今日の振り返り」     → /investment-note save --type journal
 「今週はトレードしない」「ノートレード」    → /investment-note save --type journal --content ...
 「雑感」「つぶやき」                     → /investment-note save --type journal
+「エグジット戦略の改善提案」「損切りのlesson」   → /investment-note propose --theme exit
+「リスク管理の改善提案」「リスク管理のlesson」   → /investment-note propose --theme risk
+「エントリー条件の改善提案」「エントリーのlesson」→ /investment-note propose --theme entry
+「lessonをまとめて」「学びを整理して」「lesson一覧」→ /investment-note propose
 ```
 
 **タイプ推定**:

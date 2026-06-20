@@ -1,4 +1,12 @@
-"""Technical indicators for pullback-in-uptrend screening (KIK-332)."""
+"""Technical indicators for pullback-in-uptrend screening (KIK-332).
+
+Indicators based on Monex technical analysis reference (vision/):
+- RSI: Wilder's RSI (14-period default)
+- Bollinger Bands: ±1σ/2σ/3σ
+- Stochastics: Slow%K, Slow%D (oversold<20, overbought>80)
+- DMI: +DI, -DI, ADX (trend direction and strength)
+- MA Deviation Rate: deviation from MA as % (reversal signal)
+"""
 
 import numpy as np
 import pandas as pd
@@ -363,3 +371,279 @@ def detect_momentum_surge(
         "near_high": near_high,
         "new_high": new_high,
     }
+
+
+def compute_stochastics(
+    hist: pd.DataFrame,
+    k_period: int = 14,
+    d_period: int = 3,
+    slow_period: int = 3,
+) -> tuple[pd.Series, pd.Series]:
+    """Compute Slow Stochastics (Slow%K, Slow%D).
+
+    Formula (from Monex vision/ reference):
+      %K = (Close - Lowest(Low, n)) / (Highest(High, n) - Lowest(Low, n)) × 100
+      Fast%D = SMA(d_period) of %K
+      Slow%K = Fast%D
+      Slow%D = SMA(slow_period) of Slow%K
+
+    Signals:
+      Buy  : Slow%D < 20, Slow%K crosses above Slow%D (golden cross)
+      Sell : Slow%D > 80, Slow%K crosses below Slow%D (dead cross)
+
+    Parameters
+    ----------
+    hist : pd.DataFrame
+        Price history with High, Low, Close columns.
+    k_period : int
+        %K lookback period (default 14).
+    d_period : int
+        Fast%D smoothing (default 3).
+    slow_period : int
+        Slow%D smoothing (default 3).
+
+    Returns
+    -------
+    tuple[pd.Series, pd.Series]
+        (slow_k, slow_d) — 0-100 range.
+    """
+    high = hist["High"]
+    low = hist["Low"]
+    close = hist["Close"]
+
+    lowest_low = low.rolling(window=k_period).min()
+    highest_high = high.rolling(window=k_period).max()
+
+    denom = highest_high - lowest_low
+    fast_k = ((close - lowest_low) / denom.where(denom != 0, np.nan)) * 100
+
+    fast_d = fast_k.rolling(window=d_period).mean()
+    slow_k = fast_d
+    slow_d = slow_k.rolling(window=slow_period).mean()
+
+    return slow_k, slow_d
+
+
+def compute_dmi(
+    hist: pd.DataFrame,
+    period: int = 14,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Compute DMI: +DI, -DI, ADX (Wilder's method).
+
+    Formula (from Monex vision/ reference):
+      +DM = max(0, High - prev_High)  when +DM > -DM, else 0
+      -DM = max(0, prev_Low - Low)    when -DM > +DM, else 0
+      TR  = max(High-Low, |High-prev_Close|, |prev_Close-Low|)
+      +DI = EWM(+DM, alpha=1/n) / EWM(TR, alpha=1/n) × 100
+      -DI = EWM(-DM, alpha=1/n) / EWM(TR, alpha=1/n) × 100
+      DX  = |+DI - -DI| / (+DI + -DI) × 100
+      ADX = EWM(DX, alpha=1/n)
+
+    Signals:
+      Buy  : +DI crosses above -DI (stronger when ADX is rising)
+      Sell : +DI crosses below -DI
+
+    Parameters
+    ----------
+    hist : pd.DataFrame
+        Price history with High, Low, Close columns.
+    period : int
+        Wilder smoothing period (default 14).
+
+    Returns
+    -------
+    tuple[pd.Series, pd.Series, pd.Series]
+        (plus_di, minus_di, adx)
+    """
+    high = hist["High"]
+    low = hist["Low"]
+    close = hist["Close"]
+
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (prev_close - low).abs(),
+    ], axis=1).max(axis=1)
+
+    up_move = high.diff()
+    down_move = -low.diff()
+
+    plus_dm = pd.Series(0.0, index=close.index)
+    minus_dm = pd.Series(0.0, index=close.index)
+
+    cond_plus = (up_move > down_move) & (up_move > 0)
+    plus_dm[cond_plus] = up_move[cond_plus]
+
+    cond_minus = (down_move > up_move) & (down_move > 0)
+    minus_dm[cond_minus] = down_move[cond_minus]
+
+    alpha = 1.0 / period
+    atr = tr.ewm(alpha=alpha, adjust=False).mean()
+    smooth_plus = plus_dm.ewm(alpha=alpha, adjust=False).mean()
+    smooth_minus = minus_dm.ewm(alpha=alpha, adjust=False).mean()
+
+    safe_atr = atr.where(atr != 0, np.nan)
+    plus_di = 100.0 * smooth_plus / safe_atr
+    minus_di = 100.0 * smooth_minus / safe_atr
+
+    di_sum = plus_di + minus_di
+    dx = 100.0 * (plus_di - minus_di).abs() / di_sum.where(di_sum != 0, np.nan)
+    adx = dx.ewm(alpha=alpha, adjust=False).mean()
+
+    return plus_di, minus_di, adx
+
+
+def detect_short_term_surge(hist: pd.DataFrame) -> dict:
+    """Detect short-term price surge for 急騰株 screening.
+
+    Parameters
+    ----------
+    hist : pd.DataFrame
+        Price history with Close and Volume columns (at least 26 rows).
+
+    Returns
+    -------
+    dict with keys:
+        day1_change    : 1-day price change ratio (e.g. 0.05 = +5%)
+        day5_change    : 5-day price change ratio
+        volume_spike   : today's volume / 20-day average volume
+        is_new_52w_high: True if within 1% of 52-week high
+        macd_cross     : "golden" / "dead" / "none" (within last 3 days)
+        surge_type     : "intraday" / "short_term" / "breakout" / "none"
+        short_surge_score: 0-100
+    """
+    default = {
+        "day1_change": 0.0,
+        "day5_change": 0.0,
+        "volume_spike": float("nan"),
+        "is_new_52w_high": False,
+        "macd_cross": "none",
+        "surge_type": "none",
+        "short_surge_score": 0.0,
+    }
+
+    close = hist["Close"]
+    volume = hist["Volume"]
+
+    if len(close) < 26:
+        return default
+
+    current_price = float(close.iloc[-1])
+
+    # 1-day change (ratio)
+    prev1 = float(close.iloc[-2]) if len(close) >= 2 else None
+    day1_change = (current_price - prev1) / prev1 if prev1 else 0.0
+
+    # 5-day change (ratio)
+    prev5 = float(close.iloc[-6]) if len(close) >= 6 else None
+    day5_change = (current_price - prev5) / prev5 if prev5 else 0.0
+
+    # Volume spike: today vs 20-day average
+    vol_20 = float(volume.iloc[-20:].mean()) if len(volume) >= 20 else float("nan")
+    today_vol = float(volume.iloc[-1])
+    volume_spike = today_vol / vol_20 if not np.isnan(vol_20) and vol_20 > 0 else float("nan")
+
+    # 52-week high proximity
+    week52_high = float(close.iloc[-252:].max()) if len(close) >= 252 else float(close.max())
+    high_change = (current_price - week52_high) / week52_high if week52_high > 0 else 0.0
+    is_new_52w_high = high_change >= -0.01
+
+    # MACD cross: check last 3 days for golden/dead cross
+    from src.core.screening.momentum import compute_macd
+    macd_line, signal_line, _ = compute_macd(close)
+    macd_cross = "none"
+    for offset in range(1, 4):
+        if len(macd_line) < offset + 1:
+            break
+        curr_m = float(macd_line.iloc[-offset])
+        curr_s = float(signal_line.iloc[-offset])
+        prev_m = float(macd_line.iloc[-offset - 1])
+        prev_s = float(signal_line.iloc[-offset - 1])
+        if curr_m > curr_s and prev_m <= prev_s:
+            macd_cross = "golden"
+            break
+        if curr_m < curr_s and prev_m >= prev_s:
+            macd_cross = "dead"
+            break
+
+    # Surge type classification
+    vol_ok = not np.isnan(volume_spike)
+    if day1_change >= 0.03 and vol_ok and volume_spike >= 2.0:
+        surge_type = "intraday"
+    elif day5_change >= 0.08 and vol_ok and volume_spike >= 1.5:
+        surge_type = "short_term"
+    elif is_new_52w_high and vol_ok and volume_spike >= 1.3:
+        surge_type = "breakout"
+    else:
+        surge_type = "none"
+
+    # Score (0-100): price(40) + volume(30) + 52w high(20) + MACD(10)
+    score = 0.0
+    if day1_change >= 0.05:
+        score += 40.0
+    elif day1_change >= 0.03:
+        score += 30.0
+    elif day1_change >= 0.01:
+        score += 15.0
+
+    if vol_ok:
+        if volume_spike >= 5.0:
+            score += 30.0
+        elif volume_spike >= 3.0:
+            score += 25.0
+        elif volume_spike >= 2.0:
+            score += 20.0
+        elif volume_spike >= 1.5:
+            score += 10.0
+
+    if is_new_52w_high:
+        score += 20.0
+    elif high_change >= -0.05:
+        score += 10.0
+
+    if macd_cross == "golden":
+        score += 10.0
+
+    return {
+        "day1_change": round(day1_change, 4),
+        "day5_change": round(day5_change, 4),
+        "volume_spike": round(volume_spike, 2) if not np.isnan(volume_spike) else float("nan"),
+        "is_new_52w_high": is_new_52w_high,
+        "macd_cross": macd_cross,
+        "surge_type": surge_type,
+        "short_surge_score": round(score, 2),
+    }
+
+
+def compute_ma_deviation(
+    close: pd.Series,
+    period: int = 25,
+) -> pd.Series:
+    """Compute MA Deviation Rate / 移動平均乖離率.
+
+    Formula (from Monex vision/ reference):
+      deviation = (Close - MA(n)) / MA(n) × 100
+
+    Signals:
+      Sell : large positive deviation (overbought, price too far above MA)
+      Buy  : large negative deviation (oversold, price too far below MA)
+
+    Typical thresholds depend on the MA period and instrument:
+      25-day MA: sell ~+5-6%, buy ~-8%
+
+    Parameters
+    ----------
+    close : pd.Series
+        Close prices.
+    period : int
+        MA period. Common values: 5, 25, 75, 100, 200 (daily).
+
+    Returns
+    -------
+    pd.Series
+        Deviation rate as percentage.
+    """
+    ma = close.rolling(window=period).mean()
+    deviation = ((close - ma) / ma.where(ma != 0, np.nan)) * 100
+    return deviation

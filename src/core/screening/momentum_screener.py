@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.core.screening.query_builder import build_query
 from src.core.screening.query_screener import QueryScreener
-from src.core.screening.technicals import detect_momentum_surge
+from src.core.screening.technicals import detect_momentum_surge, detect_short_term_surge
 
 _MAX_WORKERS = int(os.environ.get("SCREEN_MAX_WORKERS", "5"))
 
@@ -17,11 +17,12 @@ class MomentumScreener:
     Sub-modes:
       - stable: steady uptrend (50MA deviation +10-15%, low beta, near high)
       - surge: strong breakout (50MA deviation +15%+, high volume)
+      - intraday: short-term surge (day +3%+ AND volume 2x+)
 
     Three-step pipeline:
       Step 1: EquityQuery (momentum criteria + liquidity + market cap)
-      Step 2: Technical analysis (detect_momentum_surge) — parallel
-      Step 3: Filter + rank by surge_score
+      Step 2: Technical analysis — parallel
+      Step 3: Filter + rank by score
     """
 
     STABLE_CRITERIA = {
@@ -34,6 +35,11 @@ class MomentumScreener:
         "min_52wk_change": 0.20,
         "min_market_cap": 50_000_000_000,
         "min_avg_volume_3m": 500_000,
+    }
+
+    INTRADAY_CRITERIA = {
+        "min_market_cap": 10_000_000_000,
+        "min_avg_volume_3m": 100_000,
     }
 
     def __init__(self, yahoo_client):
@@ -55,6 +61,19 @@ class MomentumScreener:
         hist = self.yahoo_client.get_price_history(symbol)
         if hist is None or hist.empty:
             return None
+
+        if submode == "intraday":
+            short_result = detect_short_term_surge(hist)
+            if short_result["surge_type"] == "none":
+                return None
+            normalized["day1_change"] = short_result["day1_change"]
+            normalized["day5_change"] = short_result["day5_change"]
+            normalized["volume_spike"] = short_result["volume_spike"]
+            normalized["is_new_52w_high"] = short_result["is_new_52w_high"]
+            normalized["macd_cross"] = short_result["macd_cross"]
+            normalized["surge_type"] = short_result["surge_type"]
+            normalized["short_surge_score"] = short_result["short_surge_score"]
+            return normalized
 
         surge_result = detect_momentum_surge(
             hist,
@@ -110,7 +129,12 @@ class MomentumScreener:
         list[dict]
             Screened stocks sorted by surge_score descending.
         """
-        criteria = dict(self.STABLE_CRITERIA if submode == "stable" else self.SURGE_CRITERIA)
+        if submode == "stable":
+            criteria = dict(self.STABLE_CRITERIA)
+        elif submode == "intraday":
+            criteria = dict(self.INTRADAY_CRITERIA)
+        else:
+            criteria = dict(self.SURGE_CRITERIA)
 
         # Step 1: EquityQuery
         query = build_query(criteria, region=region, sector=sector, theme=theme)
@@ -145,6 +169,7 @@ class MomentumScreener:
         if not scored:
             return []
 
-        # Step 3: Sort by surge_score descending
-        scored.sort(key=lambda r: r.get("surge_score", 0), reverse=True)
+        # Step 3: Sort by score descending
+        sort_key = "short_surge_score" if submode == "intraday" else "surge_score"
+        scored.sort(key=lambda r: r.get(sort_key, 0), reverse=True)
         return scored[:top_n]
