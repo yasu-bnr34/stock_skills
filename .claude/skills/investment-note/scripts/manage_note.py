@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
 from scripts.common import print_suggestions
-from src.data.note_manager import save_note, load_notes, delete_note
+from src.data.note_manager import save_note, load_notes, delete_note, aggregate_lessons_by_theme, export_lesson_rules
 
 
 def cmd_save(args):
@@ -108,6 +108,51 @@ def cmd_list(args):
     print(f"\n合計 {len(notes)} 件")
 
 
+def cmd_propose(args):
+    """Aggregate lessons by theme and output actionable proposals."""
+    if getattr(args, "format", None) == "json":
+        import json as _json
+        rules = export_lesson_rules(theme=args.theme or None)
+        output = _json.dumps(rules, ensure_ascii=False, indent=2)
+        if getattr(args, "output", None):
+            import os
+            os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(output)
+            print(f"lesson_rules を書き出しました: {args.output}")
+            print(f"  prompt_context: {len(rules['prompt_context'])}文字")
+            print(f"  code_hints: {len(rules['code_hints'])}件")
+        else:
+            print(output)
+        return
+
+    aggregated = aggregate_lessons_by_theme(theme=args.theme or None)
+    if not aggregated:
+        print("lesson が見つかりません。")
+        return
+
+    any_found = False
+    for key, info in aggregated.items():
+        proposals = info["proposals"]
+        if not proposals:
+            continue
+        any_found = True
+        total = info["total"]
+        label = info["label"]
+        print(f"\n## {label}の改善提案（lesson {total}件 → {len(proposals)}件に集約）\n")
+        for i, lesson in enumerate(proposals, 1):
+            action = lesson.get("expected_action", "")
+            trigger = lesson.get("trigger", "")
+            date = lesson.get("date", "-")
+            print(f"{i}. **{action}**")
+            if trigger and trigger != action:
+                print(f"   - 根拠: {trigger[:100]}")
+            print(f"   - 記録日: {date}")
+    if not any_found:
+        theme_label = args.theme or "全テーマ"
+        print(f"'{theme_label}' に該当するlessonが見つかりませんでした。")
+
+
 def cmd_delete(args):
     """Delete a note by ID."""
     if not args.id:
@@ -149,6 +194,23 @@ def main():
                         help="カテゴリでフィルタ")
     p_list.add_argument("--type", default=None, help="タイプでフィルタ")
     p_list.set_defaults(func=cmd_list)
+
+    # propose
+    p_propose = subparsers.add_parser("propose", help="lessonをテーマ別に集約して改善提案を出力")
+    p_propose.add_argument(
+        "--theme", default=None,
+        choices=["exit", "risk", "entry", "timing", "selection"],
+        help="テーマ絞り込み (exit=エグジット戦略, risk=リスク管理, entry=エントリー条件, timing=売買タイミング, selection=銘柄選択)",
+    )
+    p_propose.add_argument(
+        "--format", default=None, choices=["json"],
+        help="出力形式 (json: simulator連携用JSON)",
+    )
+    p_propose.add_argument(
+        "--output", default=None,
+        help="JSON出力先ファイルパス (--format json 時のみ有効)",
+    )
+    p_propose.set_defaults(func=cmd_propose)
 
     # delete
     p_delete = subparsers.add_parser("delete", help="メモ削除")

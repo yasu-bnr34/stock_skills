@@ -1,7 +1,7 @@
 ---
 name: investment-note
-description: 投資メモの管理。投資テーゼ・懸念・学びなどをノートとして記録・参照・削除。
-argument-hint: "[save|list|delete] [--symbol SYMBOL] [--category CATEGORY] [--type TYPE] [--content TEXT] [--id NOTE_ID]"
+description: 投資メモの管理。投資テーゼ・懸念・学びなどをノートとして記録・参照・削除。lessonのテーマ別集約・改善提案も可能。
+argument-hint: "[save|list|delete|propose] [--symbol SYMBOL] [--category CATEGORY] [--type TYPE] [--content TEXT] [--id NOTE_ID] [--theme THEME]"
 allowed-tools: Bash(python3 *)
 ---
 
@@ -51,6 +51,44 @@ python3 .../manage_note.py list [--symbol 7203.T] [--type concern] [--category p
 ```bash
 python3 .../manage_note.py delete --id note_2025-02-17_7203_T_abc12345
 ```
+
+### propose -- lessonをテーマ別に集約して改善提案を出力
+
+蓄積されたlessonの `expected_action`（次回アクション）を重複除去してテーマ別に整理する。
+
+```bash
+# 全テーマ（エグジット戦略・リスク管理・エントリー条件）
+python3 .../manage_note.py propose
+
+# テーマ絞り込み
+python3 .../manage_note.py propose --theme exit    # エグジット戦略
+python3 .../manage_note.py propose --theme risk    # リスク管理
+python3 .../manage_note.py propose --theme entry   # エントリー条件
+```
+
+**出力形式:**
+```
+## エグジット戦略の改善提案（lesson 42件 → 21件に集約）
+
+1. **HOLDの過信に注意。高confidence HOLDでも損切りラインを設定する**
+   - 根拠: 1801.T 高信頼度HOLD後に損失
+   - 記録日: 2026-05-16
+```
+
+**テーマ判定キーワード:**
+
+| テーマ | キーワード |
+|:---|:---|
+| exit | エグジット, 損切り, 利確, 撤退, 売却, ストップロス |
+| risk | リスク, 集中, 分散, 保有額, レバレッジ, ポジション |
+| entry | エントリー, RSI, 買われ過ぎ, BUY, シグナル |
+
+**自然言語での呼び出し（graph-query経由）:**
+
+graph-queryスキルに以下のように話しかけても同じ結果が得られる:
+- 「エグジット戦略のlessonから改善提案をまとめて」
+- 「リスク管理に関するlessonを集約して」
+- 「lessonの改善提案を出して」
 
 ## ノートタイプ
 

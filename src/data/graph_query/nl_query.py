@@ -10,8 +10,25 @@ from typing import Optional
 from src.core.ticker_utils import SYMBOL_PATTERN, extract_symbol
 from src.data import graph_query
 
+try:
+    from src.data.note_manager import aggregate_lessons_by_theme as _aggregate_lessons
+    _HAS_NOTE_MANAGER = True
+except ImportError:
+    _HAS_NOTE_MANAGER = False
+
 # Backward-compatible alias (tests import _extract_symbol from this module)
 _extract_symbol = extract_symbol
+
+
+def _extract_lesson_theme(text: str) -> dict:
+    """Extract lesson theme keyword from user input."""
+    if any(w in text for w in ("エグジット", "exit", "損切り", "利確", "撤退")):
+        return {"theme": "exit"}
+    if any(w in text for w in ("リスク", "risk", "集中", "分散", "保有額")):
+        return {"theme": "risk"}
+    if any(w in text for w in ("エントリー", "entry", "RSI", "買い")):
+        return {"theme": "entry"}
+    return {"theme": None}
 
 
 def _extract_symbol_and_type(text: str) -> dict:
@@ -51,6 +68,8 @@ _TEMPLATES = [
     (r"フォーキャスト.*推移|前回.*見通し|予測.*履歴|forecast.*履歴", "forecast_history", _extract_symbol),
     # KIK-603 theme trend
     (r"テーマ.*推移|テーマ.*トレンド|テーマ.*履歴|トレンドテーマ.*履歴|theme.*trend", "theme_trends", None),
+    # lesson proposals
+    (r"lesson.*提案|lesson.*集約|lesson.*まとめ|エグジット.*lesson|リスク.*lesson|lesson.*エグジット|lesson.*リスク|lesson.*改善|改善提案.*lesson", "lesson_proposals", _extract_lesson_theme),
 ]
 
 _COMPILED = [(re.compile(pat, re.IGNORECASE), qtype, extractor) for pat, qtype, extractor in _TEMPLATES]
@@ -168,6 +187,12 @@ def _execute(query_type: str, params: dict):
     # KIK-603
     if query_type == "theme_trends":
         return graph_query.get_theme_trends()
+
+    if query_type == "lesson_proposals":
+        if not _HAS_NOTE_MANAGER:
+            return None
+        theme = params.get("theme")
+        return _aggregate_lessons(theme=theme)
 
     return None
 
@@ -397,6 +422,28 @@ def _fmt_theme_trends(result, params: dict) -> str:
     return "\n".join(lines)
 
 
+def _fmt_lesson_proposals(result, params: dict) -> str:
+    if not result:
+        return "lessonが見つかりませんでした。"
+    lines = []
+    for key, info in result.items():
+        proposals = info.get("proposals", [])
+        if not proposals:
+            continue
+        total = info["total"]
+        label = info["label"]
+        lines.append(f"\n## {label}の改善提案（lesson {total}件 → {len(proposals)}件に集約）\n")
+        for i, lesson in enumerate(proposals, 1):
+            action = lesson.get("expected_action", "")
+            trigger = lesson.get("trigger", "")
+            date = lesson.get("date", "-")
+            lines.append(f"{i}. **{action}**")
+            if trigger and trigger != action:
+                lines.append(f"   - 根拠: {trigger[:100]}")
+            lines.append(f"   - 記録日: {date}")
+    return "\n".join(lines) if lines else "該当するlessonが見つかりませんでした。"
+
+
 _FORMATTERS = {
     "prior_report": _fmt_prior_report,
     "recurring_picks": _fmt_recurring_picks,
@@ -416,4 +463,5 @@ _FORMATTERS = {
     "forecast_history": _fmt_forecast_history,
     # KIK-603
     "theme_trends": _fmt_theme_trends,
+    "lesson_proposals": _fmt_lesson_proposals,
 }

@@ -269,6 +269,163 @@ def load_notes(
     return all_notes
 
 
+_LESSON_THEMES = {
+    "exit": {
+        "label": "エグジット戦略",
+        "keywords": ["エグジット", "exit", "損切り", "利確", "撤退", "売却", "ストップロス", "テイクプロフィット"],
+    },
+    "risk": {
+        "label": "リスク管理",
+        "keywords": ["リスク", "集中", "分散", "保有額", "レバレッジ", "ポジション", "過大"],
+    },
+    "entry": {
+        "label": "エントリー条件",
+        "keywords": ["エントリー", "RSI", "買われ過ぎ", "BUY", "シグナル", "買わない"],
+    },
+    "timing": {
+        "label": "売買タイミング",
+        "keywords": ["タイミング", "時間帯", "寄り付き", "大引け", "ザラ場", "場中", "待つ", "前場", "後場", "引け", "日中"],
+    },
+    "selection": {
+        "label": "銘柄選択",
+        "keywords": ["銘柄選択", "銘柄選び", "流動性", "出来高", "ボラ", "選択基準", "候補", "スペック", "ボラティリティ"],
+    },
+}
+
+
+def aggregate_lessons_by_theme(theme: Optional[str] = None, base_dir: str = _NOTES_DIR) -> dict:
+    """Aggregate lesson notes by theme, deduplicating expected_action.
+
+    Returns a dict keyed by theme name, each with:
+      label, total (raw count), proposals (deduplicated list of lesson dicts).
+
+    Deduplication is cross-file: exact match first, then fuzzy similarity >= 0.7
+    to catch near-duplicates stored in different date files.
+    """
+    lessons = load_notes(note_type="lesson", base_dir=base_dir)
+    themes = {theme: _LESSON_THEMES[theme]} if (theme and theme in _LESSON_THEMES) else _LESSON_THEMES
+
+    result = {}
+    for key, info in themes.items():
+        matched = [n for n in lessons if _lesson_matches_theme(n, info["keywords"])]
+        seen: set = set()
+        seen_list: list = []
+        proposals = []
+        for lesson in matched:
+            action = (lesson.get("expected_action") or "").strip()
+            if not action or action in seen:
+                continue
+            if _is_near_duplicate_action(action, seen_list):
+                continue
+            seen.add(action)
+            seen_list.append(action)
+            proposals.append(lesson)
+        result[key] = {"label": info["label"], "total": len(matched), "proposals": proposals}
+    return result
+
+
+def _is_near_duplicate_action(action: str, seen_actions: list, threshold: float = 0.7) -> bool:
+    """Return True if action is a near-duplicate of any entry in seen_actions."""
+    for seen in seen_actions:
+        if _keyword_similarity(action, seen) >= threshold:
+            return True
+    return False
+
+
+def export_lesson_rules(theme: Optional[str] = None, base_dir: str = _NOTES_DIR) -> dict:
+    """Export aggregated lesson rules as structured JSON for external systems.
+
+    Returns:
+        {
+          "generated_at": ISO timestamp,
+          "prompt_context": formatted string ready to inject into AI system prompt,
+          "code_hints": list of quantitative/code-like rules for Safety guards,
+          "themes": raw aggregation data
+        }
+    """
+    from datetime import datetime as _dt
+    aggregated = aggregate_lessons_by_theme(theme=theme, base_dir=base_dir)
+
+    prompt_lines = ["## 過去のlessonから学んだ改善ルール\n"]
+    code_hints = []
+
+    for key, info in aggregated.items():
+        proposals = info.get("proposals", [])
+        if not proposals:
+            continue
+        prompt_lines.append(f"### {info['label']}\n")
+        for lesson in proposals:
+            action = lesson.get("expected_action", "").strip()
+            if not action:
+                continue
+            prompt_lines.append(f"- {action}")
+            clean = _strip_markdown(action)
+            if _is_code_hint(clean):
+                code_hints.append({
+                    "theme": key,
+                    "rule": clean,
+                    "short_summary": _make_short_summary(clean),
+                    "date": lesson.get("date", "-"),
+                })
+        prompt_lines.append("")
+
+    return {
+        "generated_at": _dt.now().isoformat(timespec="seconds"),
+        "prompt_context": "\n".join(prompt_lines).strip(),
+        "code_hints": code_hints,
+        "themes": {
+            k: {"label": v["label"], "total": v["total"],
+                "proposals": [p.get("expected_action", "") for p in v["proposals"] if p.get("expected_action")]}
+            for k, v in aggregated.items()
+        },
+    }
+
+
+def _make_short_summary(rule: str, max_len: int = 80) -> str:
+    """Generate a <=max_len-char summary from a rule, preserving key numbers/conditions."""
+    import re as _re
+    if len(rule) <= max_len:
+        return rule
+    for sep in ["。", "、", "\n", ". ", ", "]:
+        parts = rule.split(sep)
+        if parts[0] and len(parts[0]) <= max_len:
+            return parts[0]
+    return rule[:max_len - 1] + "…"
+
+
+def _strip_markdown(text: str) -> str:
+    import re as _re
+    text = _re.sub(r'\*{1,2}([^*]+)\*{1,2}', r'\1', text)  # **bold** → bold
+    text = _re.sub(r'`([^`]+)`', r'\1', text)               # `code` → code
+    return text.strip()
+
+
+_CODE_HINT_PATTERNS = [
+    r"\d+%",          # 20%, 15%
+    r"RSI\s*[<>]\s*\d+",  # RSI>70, RSI<30
+    r"\d+\s*万",      # 55万
+    r"signal\s*=",    # signal = "HOLD"
+    r"if\s+rsi",      # if rsi > 70
+    r"損切り.*[−\-]\d+",  # 損切りライン -3%
+    r"[0-9]+\s*(株|円|ロット)",  # 100株, 500円
+    r"総資産の\d+",   # 総資産の20%
+    r"[0-9]+\s*時間", # 2時間
+]
+
+def _is_code_hint(action: str) -> bool:
+    import re
+    return any(re.search(p, action) for p in _CODE_HINT_PATTERNS)
+
+
+def _lesson_matches_theme(lesson: dict, keywords: list) -> bool:
+    text = " ".join([
+        lesson.get("trigger", ""),
+        lesson.get("expected_action", ""),
+        lesson.get("content", ""),
+    ])
+    return any(kw in text for kw in keywords)
+
+
 # ---------------------------------------------------------------------------
 # Lesson conflict detection (KIK-564)
 # ---------------------------------------------------------------------------
