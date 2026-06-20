@@ -297,6 +297,15 @@ Current market regime assessment.
 | `index_symbol` | `str` |
 
 
+### src.core.portfolio.ml_backtest
+
+ML-enhanced backtest: Walk-forward validation, SHAP, Optuna.
+
+- `build_ml_dataset(yahoo_client_module, category: str='screen', preset: str | None=None, region: str | None=None, days_back: int=365, base_dir: str='data/history') -> dict` — Build feature matrix and return labels from screening history.
+- `run_walk_forward(dataset: dict, n_splits: int=5) -> dict` — Walk-forward validation via TimeSeriesSplit.
+- `run_shap_analysis(dataset: dict) -> dict` — Compute SHAP values to identify which indicators drive positive returns.
+- `run_optuna_optimization(dataset: dict, n_trials: int=50, n_splits: int=3) -> dict` — Optimize value-score thresholds using Optuna.
+
 ### src.core.portfolio.portfolio_bridge
 
 Bridge between portfolio management and stress test skills (KIK-342 -> KIK-339).
@@ -709,6 +718,10 @@ Technical indicators for pullback-in-uptrend screening (KIK-332).
 - `compute_bollinger_bands(close: pd.Series, period: int=20, std_dev: float=2.0) -> tuple[pd.Series, pd.Series, pd.Series]` — Return (upper, middle, lower) Bollinger Bands.
 - `detect_pullback_in_uptrend(hist: pd.DataFrame) -> dict` — Detect pullback buying opportunity in an uptrend.
 - `detect_momentum_surge(hist: pd.DataFrame, fifty_day_avg_change_pct: float | None=None, fifty_two_week_high_change_pct: float | None=None) -> dict` — Detect momentum surge / breakout signals (KIK-506).
+- `compute_stochastics(hist: pd.DataFrame, k_period: int=14, d_period: int=3, slow_period: int=3) -> tuple[pd.Series, pd.Series]` — Compute Slow Stochastics (Slow%K, Slow%D).
+- `compute_dmi(hist: pd.DataFrame, period: int=14) -> tuple[pd.Series, pd.Series, pd.Series]` — Compute DMI: +DI, -DI, ADX (Wilder's method).
+- `detect_short_term_surge(hist: pd.DataFrame) -> dict` — Detect short-term price surge for 急騰株 screening.
+- `compute_ma_deviation(close: pd.Series, period: int=25) -> pd.Series` — Compute MA Deviation Rate / 移動平均乖離率.
 
 ### src.core.screening.trending_screener (KIK-440: Grokトレンドテーマ検出)
 
@@ -1134,6 +1147,8 @@ Note manager -- dual-write to JSON files and Neo4j (KIK-397, KIK-429).
 
 - `save_note(symbol: Optional[str]=None, note_type: str='observation', content: str='', source: str='', category: Optional[str]=None, base_dir: str=_NOTES_DIR, trigger: Optional[str]=None, expected_action: Optional[str]=None, stop_loss: Optional[str]=None, take_profit: Optional[str]=None) -> dict` — Save a note to JSON file and Neo4j.
 - `load_notes(symbol: Optional[str]=None, note_type: Optional[str]=None, category: Optional[str]=None, base_dir: str=_NOTES_DIR) -> list[dict]` — Load notes from JSON files.
+- `aggregate_lessons_by_theme(theme: Optional[str]=None, base_dir: str=_NOTES_DIR) -> dict` — Aggregate lesson notes by theme, deduplicating expected_action.
+- `export_lesson_rules(theme: Optional[str]=None, base_dir: str=_NOTES_DIR) -> dict` — Export aggregated lesson rules as structured JSON for external systems.
 - `check_lesson_conflicts(new_lesson: dict, base_dir: str=_NOTES_DIR, similarity_threshold: float=0.5) -> list[dict]` — Check if a new lesson conflicts with existing lessons (KIK-564/570).
 - `get_exit_rules(symbol: Optional[str]=None, base_dir: str=_NOTES_DIR) -> list[dict]` — Load exit-rule notes, optionally filtered by symbol (KIK-566).
 - `check_exit_rule(symbol: str, pnl_pct: float, base_dir: str=_NOTES_DIR) -> Optional[dict]` — Check if a position has hit any exit-rule threshold (KIK-566).
@@ -1148,6 +1163,7 @@ User profile settings loader (KIK-599).
 - `get_tax_cost(gain_jpy: float) -> dict` — Calculate tax on capital gains.
 - `get_broker_info() -> dict` — Get broker name and account type.
 - `needs_tax_filing() -> bool` — Check if tax filing is required.
+- `get_screening_regions() -> dict` — Get preferred and excluded regions for screening.
 - `reset_cache()` — Clear cached profile (for testing).
 
 ### src.data.yahoo_client._cache
@@ -1255,6 +1271,7 @@ Output formatters for screening results (KIK-575: unified renderer).
 - `format_trending_markdown(results: list[dict], market_context: str='') -> str` — Format trending stock screening results.
 - `format_contrarian_markdown(results: list[dict]) -> str` — Format contrarian screening results (3-axis scoring).
 - `format_momentum_markdown(results: list[dict]) -> str` — Format momentum/surge screening results.
+- `format_surge_markdown(results: list[dict]) -> str` — Format short-term surge (急騰株) screening results.
 - `format_auto_theme_header(themes: list[dict], skipped: list[dict] | None=None) -> str` — Format Grok trending themes header (KIK-440).
 
 ### src.output.health_formatter (KIK-469 P2: stock/ETFテーブル分離)

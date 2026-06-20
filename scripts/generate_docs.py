@@ -275,7 +275,7 @@ def generate_api_reference() -> str:
         lines.append("")
 
         for dotted, py_file in _collect_modules(layer_path):
-            rel_str = str(py_file.relative_to(ROOT))
+            rel_str = py_file.relative_to(ROOT).as_posix()
 
             # Skip empty __init__.py (just re-exports)
             source = py_file.read_text(errors="replace")
@@ -343,7 +343,7 @@ def _list_modules_for_layer(layer_path: Path, annotations: dict) -> str:
 
     # Subdirectories first
     for d in subdirs:
-        rel = str(d.relative_to(ROOT)) + "/__init__.py"
+        rel = d.relative_to(ROOT).as_posix() + "/__init__.py"
         ann = annotations.get(rel, "")
         name = d.name + "/"
         if ann:
@@ -353,7 +353,7 @@ def _list_modules_for_layer(layer_path: Path, annotations: dict) -> str:
 
     # Standalone files
     for f in standalone:
-        rel = str(f.relative_to(ROOT))
+        rel = f.relative_to(ROOT).as_posix()
         ann = annotations.get(rel, "")
         name = f.stem
         if ann:
