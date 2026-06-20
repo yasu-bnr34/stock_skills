@@ -52,3 +52,22 @@ docker ps
 | `.claude/skills/` | 9つの分析スキル |
 | `src/` | コアロジック |
 | `data/` | キャッシュ・ウォッチリスト・メモ（gitignore） |
+| `AGENTS.md` | Codex/Cursor共通エントリポイント（横断記憶のハブ） |
+| `CHANGELOG.md` | 主要な変更履歴 |
+
+## Git リモート構成
+
+| remote | URL | 用途 |
+|---|---|---|
+| `origin` | `okikusan-public/stock_skills`（菊池氏） | upstream。**書き込み権限なし**（読み取りのみ） |
+| `fork` | `yasu-bnr34/stock_skills`（鈴木） | push先。ローカル`main`が`fork/main`を追跡 |
+
+- 日常の `git push` は **fork** へ飛ぶ。認証はGCM（Windows資格情報マネージャー）に保存済みで再プロンプトなし。
+- upstream へ反映する場合は fork から **Pull Request** を作成する。
+
+## Windows環境での注意（2026-06-21対応済み）
+
+- このリポジトリは元々 macOS で開発（`/Users/kikuchihiroyuki/...`）。Windows固有の不具合を修正済み:
+  - `scripts/common.py` のタイムアウト: `signal.SIGALRM`(Unix専用) → クロスプラットフォーム化
+  - `scripts/generate_docs.py`: パス照合を `Path.as_posix()` に統一（KIKアノテーション消失バグ修正）
+- 全3324テスト通過（Windows）。詳細は `CHANGELOG.md` 参照。
