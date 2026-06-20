@@ -5,8 +5,11 @@ data/screening_results/
 data/notes/
 __pycache__/
 *.pyc
+.pytest_cache/
 .venv/
 .env
+.DS_Store
+.omc/
 .claude/skills/stock-portfolio/data/portfolio.csv
 .claude/worktrees/
 .claude/settings.local.json
