@@ -1,6 +1,7 @@
 services:
   neo4j:
     image: neo4j:5-community
+    restart: always
     ports:
       - "7475:7474"
       - "7688:7687"
@@ -12,6 +13,7 @@ services:
   # KIK-420: Text Embeddings Inference for vector search
   embedding:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    restart: always
     platform: linux/amd64
     ports:
       - "8081:80"

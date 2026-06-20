@@ -14,5 +14,8 @@ __pycache__/
 .claude/worktrees/
 .claude/settings.local.json
 data/models/
+data/yahoo_realtime/
+data/grok_trending/
+data/lesson_rules.json
 articles/
 config/user_profile.yaml
