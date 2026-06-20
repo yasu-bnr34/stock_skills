@@ -185,8 +185,8 @@ def format_position_list(portfolio: list[dict]) -> str:
         lines.append("\u4fdd\u6709\u9298\u67c4\u304c\u3042\u308a\u307e\u305b\u3093\u3002")
         return "\n".join(lines)
 
-    lines.append("| \u9298\u67c4 | \u682a\u6570 | \u53d6\u5f97\u5358\u4fa1 | \u901a\u8ca8 | \u53d6\u5f97\u65e5 | \u30e1\u30e2 |")
-    lines.append("|:-----|-----:|-------:|:-----|:---------|:-----|")
+    lines.append("| \u9298\u67c4 | \u682a\u6570 | \u53d6\u5f97\u5358\u4fa1 | \u901a\u8ca8 | \u53d6\u5f97\u65e5 | \u6700\u7d42\u58f2\u8cb7\u65e5 | \u30e1\u30e2 |")
+    lines.append("|:-----|-----:|-------:|:-----|:---------|:----------|:-----|")
 
     for pos in portfolio:
         symbol = pos.get("symbol", "-")
@@ -194,13 +194,14 @@ def format_position_list(portfolio: list[dict]) -> str:
         cost_price = pos.get("cost_price")
         currency = pos.get("cost_currency") or pos.get("currency", "JPY")
         purchase_date = pos.get("purchase_date") or "-"
+        last_trade_date = pos.get("last_trade_date") or "-"
         memo = pos.get("memo") or ""
 
         cost_str = _fmt_currency_value(cost_price, currency)
 
         lines.append(
             f"| {symbol} | {shares:,} | {cost_str} | {currency} "
-            f"| {purchase_date} | {memo} |"
+            f"| {purchase_date} | {last_trade_date} | {memo} |"
         )
 
     lines.append("")

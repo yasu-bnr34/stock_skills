@@ -296,6 +296,37 @@ def format_momentum_markdown(results: list[dict]) -> str:
     ])
 
 
+_SURGE_TYPE_ICONS = {"intraday": "⚡", "short_term": "🚀", "breakout": "🔥"}
+_SURGE_TYPE_LABELS = {"intraday": "当日急騰", "short_term": "短期急騰", "breakout": "ブレイクアウト"}
+
+
+def format_surge_markdown(results: list[dict]) -> str:
+    """Format short-term surge (急騰株) screening results."""
+    def _surge_type(r, row):
+        st = row.get("surge_type", "none")
+        icon = _SURGE_TYPE_ICONS.get(st, "")
+        label = _SURGE_TYPE_LABELS.get(st, "-")
+        return f"{icon}{label}"
+
+    def _macd(r, row):
+        mc = row.get("macd_cross", "none")
+        return {"golden": "✅", "dead": "❌", "none": "-"}.get(mc, "-")
+
+    return render_screening_table(results, columns=[
+        ("順位", "---:", lambda r, row: str(r)),
+        ("銘柄", ":-----", lambda r, row: _build_label(row)),
+        ("株価", "-----:", _price_cell),
+        ("当日騰落", "-------:", lambda r, row: _fmt_pct(row.get("day1_change"))),
+        ("5日騰落", "-------:", lambda r, row: _fmt_pct(row.get("day5_change"))),
+        ("出来高倍", "-------:", lambda r, row: _fmt_float(row.get("volume_spike"), decimals=1)),
+        ("MACD", "-----:", _macd),
+        ("スコア", "------:", lambda r, row: _fmt_float(row.get("short_surge_score"), decimals=0)),
+        ("種別", ":----------:", _surge_type),
+    ], empty_msg="急騰条件に合致する銘柄が見つかりませんでした。", legends=[
+        "**種別**: ⚡当日急騰(+3%以上+出来高2倍) / 🚀短期急騰(5日+8%以上+出来高1.5倍) / 🔥ブレイクアウト(52週高値更新+出来高1.3倍)",
+    ])
+
+
 # ---------------------------------------------------------------------------
 # Auto-theme header (not a table formatter)
 # ---------------------------------------------------------------------------
